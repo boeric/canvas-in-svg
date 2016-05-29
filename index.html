@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Canvas in SVG</title>
+<!-- Author: Bo Ericsson, bo@boe.net -->
+<link rel=stylesheet type=text/css href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/2.3.2/css/bootstrap.min.css" media="all">
+<style>
+body {
+	margin: 0px;
+	padding: 10px;
+	width: 920px;
+	height: 400px;
+}
+.well {
+	margin-bottom: 10px;
+	padding: 8px 12px;
+}
+h4 {
+	margin: 0px
+}
+svg {
+	border: 1px solid #E6AAAA; /*#e3e3e3 = bootstrap .well look*/;
+	border-radius: 4px;
+	box-shadow: inset 0 1px 1px rgba(0,0,0,0.05);
+  display: inline;
+  vertical-align: top;
+}
+svg .bg {
+	fill: #F5F5F5
+}
+button.btn {
+  width: 250px;
+  margin-bottom: 20px;
+}
+pre {
+  background-color: white;
+  border: none;
+  /*margin: 20px;*/
+  font-size: 10px;
+  height: 250px;
+  overflow: scroll;
+}
+.control {
+  /*width: 315px;*/
+  overflow-x: scroll;
+  padding-left: 20px;
+}
+#container {
+  overflow: hidden;
+}
+label {
+  font-size: 12px;
+  /*font-weight: bold;*/
+  margin-top: 15px;
+}
+input[type=range] {
+  display: block;
+  width: 250px;
+}
+</style>
+<body>
+
+  <div class="well">
+  	<h4>Canvas in SVG
+  </div>
+
+  <div id="container"></div>
+
+<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>-->
+<script src="../_lib/d3.min.js"></script>
+<script>
+'use strict';
+
+console.log(d3.version);
+
+var container = d3.select("#container");
+var svgDim = { width: 600, height: 350 };
+var margin = { x: 10, y: 10 };
+var canvasDim = { width: svgDim.height - margin.x * 2, height: svgDim.height - margin.y * 2 };
+var data = [];
+var info;
+
+var samplesOptions = [
+  { value: 0, samples:    50 },
+  { value: 1, samples:   500 },
+  { value: 2, samples:  5000 },
+  { value: 3, samples: 50000 }
+];
+var samplesDefault = 500;
+var samplesCurrent = samplesDefault;
+
+
+var opacityDefault = 0.7;
+var opacityCurrent = opacityDefault;
+
+console.log("--", canvasDim)
+
+// create svg and group
+var svg = container.append("svg")
+      .attr("width", svgDim.width + "px")
+      .attr("height", svgDim.height + "px")
+    .append("g")
+
+// background
+svg.append("rect")
+    .attr("x", svgDim.x)
+    .attr("y", svgDim.y)
+    .attr("width", svgDim.width)
+    .attr("height", svgDim.height)
+    .attr("class", "bg")
+
+// add foreign object to svg
+var foreignObject = svg.append("foreignObject")
+    .attr("x", margin.x)
+    .attr("y", margin.y)
+    .attr("width", canvasDim.width)
+    .attr("height", canvasDim.height)
+
+// add embedded body to foreign object
+var foBody = foreignObject.append("xhtml:body")
+    .style("margin", "0px")
+    .style("padding", "0px")
+    .style("background-color", "none")
+    .style("width", canvasDim.width + "px")
+    .style("height", canvasDim.height + "px")
+    //.style("border", "1px solid black")
+
+// add embedded canvas to embedded body
+var canvas = foBody.append("canvas")
+    .attr("x", 0)
+    .attr("y", 0)
+    .attr("width", canvasDim.width)
+    .attr("height", canvasDim.height)
+    .style("cursor", "crosshair")
+    .on("mousemove", function() {
+      var pos = {
+        x: d3.mouse(this)[0],
+        y: d3.mouse(this)[1]
+      }
+      pos.minX = pos.x - 2;
+      pos.maxX = pos.x + 2;
+      pos.minY = pos.y - 2;
+      pos.maxY = pos.y + 2;
+
+      var matches = data.filter(function(d) {
+        if (d.x >= pos.minX && d.x <= pos.maxX && 
+            d.y >= pos.minY && d.y <= pos.maxY) {
+          return d;
+        }
+      })
+
+      var out = "Points under mouse: " + matches.length + "\n";
+      matches.forEach(function(d) {
+        out += "Id: " + d.id + ", x: " + d.x + ", y: " + d.y + ", color: " + d.color + "\n";
+      })
+      d3.select("pre").text(out);
+    });
+
+// get drawing context of canvas
+var ctx = canvas.node().getContext("2d");
+
+// add identifier
+svg.append("text")
+    .attr({ "x": svgDim.width - 180, "y": 20, "font-family": "Arial", "font-size": "12px" })
+    .text("SVG with embedded Canvas")
+
+
+// ui controls
+
+// add update button
+var rightPanel = container.append("div")
+    .style("display", "inline-block")
+    .attr("class", "control")
+
+rightPanel.append("button")
+    .attr("class", "btn btn-primary btn-small")
+    .text("Generate New Points")
+    .on("click", function() {
+      this.blur();
+      updateData(generateData());
+    })
+
+var samplesLabel = rightPanel.append("label")
+    .text("Number of samples (currently " + samplesCurrent + ")");
+
+var samplesRange = rightPanel.append("input")
+    .attr({ "type": "range", "min": 0, "max": 3, "step": 1 })
+    .attr("value", function() {
+      return samplesOptions.find(function(d) {
+        if (d.samples == samplesCurrent) return true;
+      }).value;
+    })
+    .on("input", function() {
+      var value = d3.select(this).property("value");
+      samplesCurrent = samplesOptions.find(function(d) {
+        if (d.value == value) return true;
+      }).samples;
+      samplesLabel.text("Number of samples (will be " + samplesCurrent + ")");
+    })
+    .on("change", function() {
+      samplesLabel.text("Number of samples (currently " + samplesCurrent + ")");
+      updateData(generateData());
+    })
+
+
+var opacityLabel = rightPanel.append("label")
+    .text("Opacity (currently " + (opacityCurrent * 100) + "% )");
+
+var opacityRange = rightPanel.append("input")
+    .attr({ "type": "range", "min": 0, "max": 100, "step": 1 })
+    .attr("value", Math.round(opacityDefault * 100))
+    .on("input", function() {
+      var value = d3.select(this).property("value");
+      opacityCurrent = value / 100;
+      opacityLabel.text("Opacity (currently " + Math.round((opacityCurrent * 100)) + "% )");
+      updateData();
+    })
+
+var correlationDefault = 0.7;
+var correlationCurrent = correlationDefault;
+
+var correlationLabel = rightPanel.append("label")
+    .text("Target correlation (currently " + correlationCurrent + ")");
+
+var correlationRange = rightPanel.append("input")
+    .attr({ "type": "range", "min": 0, "max": 100, "step": 1 })
+    .attr("value", Math.round(correlationDefault * 100))
+    .on("input", function() {
+      var value = d3.select(this).property("value");
+      correlationCurrent = value / 100;
+      correlationLabel.text("Target correlation (currently " + correlationCurrent + ")");
+      updateData(generateData());
+    })
+
+// add container for mouseover info
+info = container.append("pre")
+
+
+
+function generateData() {
+
+  var count = samplesCurrent;
+  data = [];
+
+  var xScale = d3.scale.linear()
+      .domain([-5, 5])
+      .rangeRound([0, canvasDim.width])
+
+  var yScale = d3.scale.linear()
+      .domain([-5, 5])
+      .rangeRound([canvasDim.height, 0])
+
+  var color = d3.scale.category20b();
+
+  d3.range(count).forEach(function(d) {
+
+    var x1 = normDist();
+    var x2 = normDist();
+    var p = correlationCurrent;
+    var y1 = p * x1 + Math.sqrt(1 - p * p) * x2
+
+    var xValue = x1;
+    var yValue = y1;
+
+    var point = {
+      x: xScale(xValue),
+      y: yScale(yValue),
+      id: d,
+      color: "black" //color(d % 20)
+    }
+    data.push(point)
+  })
+}
+
+
+
+
+function updateData() {
+
+  // clear the canvas
+  ctx.clearRect(0, 0, canvasDim.width, canvasDim.height)
+
+  // set background color and draw with full opacity
+  ctx.globalAlpha = .8;
+  //ctx.rect(0, 0, canvasDim.width, canvasDim.height);
+  //ctx.fillStyle = "lightyellow";
+  //ctx.fill();
+  //ctx.stroke();
+
+  // draw identifier
+  ctx.font = "12px Arial"
+  ctx.fillText("Canvas with " + samplesCurrent + " elements", 
+    canvasDim.width - 170, canvasDim.height - 20);
+
+  // set opacity for data elements
+  ctx.globalAlpha = opacityCurrent;
+
+  // draw the data
+  data.forEach(function(d, i) {
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 2, 0, 2 * Math.PI, true);
+    ctx.fillStyle = d.color;
+    ctx.closePath();
+    ctx.fill();
+  })
+}
+
+
+// initial update
+updateData(generateData());
+
+
+// generate normal distribution
+// http://www.design.caltech.edu/erik/Misc/Gaussian.html
+function normDist() {
+  var x1, x2, w, y1, y2;
+
+  do {
+    x1 = 2.0 * Math.random() - 1.0;
+    x2 = 2.0 * Math.random() - 1.0;
+    w = x1 * x1 + x2 * x2;
+  } while ( w >= 1.0 );
+
+  w = Math.sqrt( (-2.0 * Math.log( w ) ) / w );
+  y1 = x1 * w;
+  y2 = x2 * w; 
+  return y1; 
+}
+
+
+// Standard Normal variate using Box-Muller transform.
+// http://stackoverflow.com/questions/25582882/javascript-math-random-normal-distribution-gaussian-bell-curve
+function randn_bm() {
+    var u = 1 - Math.random(); // Subtraction to flip [0, 1) to (0, 1].
+    var v = 1 - Math.random();
+    return Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+}
+
+
+d3.range(100).forEach(function(d) {
+  //console.log(normDist().toFixed(3) + "\t" + randn_bm().toFixed(3))
+})
+
+
+</script>
