@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <title>Canvas in SVG</title>
 <!-- Author: Bo Ericsson, bo@boe.net -->
-<link rel=stylesheet type=text/css href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/2.3.2/css/bootstrap.min.css" media="all">
+<!--<link rel=stylesheet type=text/css href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/2.3.2/css/bootstrap.min.css" media="all">-->
+<link rel=stylesheet type=text/css href="../_lib/bootstrap.min.css" media="all">
 <style>
 body {
 	margin: 0px;
@@ -30,19 +31,17 @@ svg .bg {
 	fill: #F5F5F5
 }
 button.btn {
-  width: 250px;
+  width: 100%;
   margin-bottom: 10px;
 }
 pre {
   background-color: white;
   border: none;
-  /*margin: 20px;*/
   font-size: 10px;
-  height: 250px;
   overflow: scroll;
 }
 .control {
-  /*width: 315px;*/
+  width: 295px;
   overflow-x: scroll;
   padding-left: 20px;
 }
@@ -55,7 +54,7 @@ label {
 }
 input[type=range] {
   display: block;
-  width: 250px;
+  width: 100%;
 }
 input[type=checkbox],
 input[type=radio] {
@@ -80,7 +79,11 @@ text {
 .sampleOption label {
   display: inline-block;
 }
+.dataBar {
+  fill: lightgray;
+}
 </style>
+
 <body>
 
   <div class="well">
@@ -94,51 +97,56 @@ text {
 <script>
 'use strict';
 
-
-
-var container = d3.select("#container");
+// dimensions
 var svgDim = { width: 600, height: 350 };
 var margin = { x: 10, y: 10 };
 var canvasDim = { width: svgDim.height - margin.x * 2, height: svgDim.height - margin.y * 2 };
-var data = [];
-var info;
+var groupWidth = 200;
+var barHeight = 18;
+var barPadding = 3;
 
+// samples
 var samplesOptions = [
-  { value: 0, samples:     5, display:   "5" },
-  { value: 1, samples:    50, display:  "50" },
-  { value: 2, samples:   500, display: "500" },
-  { value: 3, samples:  5000, display:  "5K" },
-  { value: 4, samples: 50000, display: "50K" }
+  { value: 0, samples:     5, display:   "5", pointScaleDomain: [0,    3], opacity: 1.0 },
+  { value: 1, samples:    50, display:  "50", pointScaleDomain: [0,    5], opacity: 0.8 },
+  { value: 2, samples:   500, display: "500", pointScaleDomain: [0,   10], opacity: 0.5 },
+  { value: 3, samples:  5000, display:  "5K", pointScaleDomain: [0,  100], opacity: 0.2 },
+  { value: 4, samples: 50000, display: "50K", pointScaleDomain: [0, 1000], opacity: 0.1 }
 ];
-var samplesDefault = 500;
+var samplesIdx = 2;
+var samplesDefault = samplesOptions[samplesIdx].samples;
 var samplesCurrent = samplesDefault;
 
+// other defaults
 var opacityDefault = 0.7;
 var opacityCurrent = opacityDefault;
-var canvasColor = false;
+var correlationDefault = 0.6;
+var correlationCurrent = correlationDefault;
+
+// svg variables
 var xScale;
 var yScale;
 var pearsonCorrelation;
 var pointBarGroup;
+var pointAxis;
+var pointAxisGroup;
 var pointScale;
-var groupWidth = 200;
-var barHeight = 18;
-var barPadding = 3;
+
+// other
+var container = d3.select("#container");
+var opacityRangeControl;
+var opacityLabel;
+var canvasColor = false;
+var format = d3.format(",d");
 var posY = 0;
-var format = d3.format(",d")
-
-
-
-
-
-
+var data = [];
 
 
 // create svg and group
 var svg = container.append("svg")
       .attr("width", svgDim.width + "px")
       .attr("height", svgDim.height + "px")
-    .append("g")
+    .append("g");
 
 // background
 svg.append("rect")
@@ -146,7 +154,7 @@ svg.append("rect")
     .attr("y", svgDim.y)
     .attr("width", svgDim.width)
     .attr("height", svgDim.height)
-    .attr("class", "bg")
+    .attr("class", "bg");
 
 // add foreign object to svg
 // https://gist.github.com/mbostock/1424037
@@ -154,7 +162,7 @@ var foreignObject = svg.append("foreignObject")
     .attr("x", margin.x)
     .attr("y", margin.y)
     .attr("width", canvasDim.width)
-    .attr("height", canvasDim.height)
+    .attr("height", canvasDim.height);
 
 // add embedded body to foreign object
 var foBody = foreignObject.append("xhtml:body")
@@ -163,7 +171,7 @@ var foBody = foreignObject.append("xhtml:body")
     .style("background-color", "none")
     .style("width", canvasDim.width + "px")
     .style("height", canvasDim.height + "px")
-    //.style("border", "1px solid black")
+    .style("border", "1px solid lightgray");
 
 // add embedded canvas to embedded body
 var canvas = foBody.append("canvas")
@@ -176,108 +184,118 @@ var canvas = foBody.append("canvas")
       var pos = {
         x: d3.mouse(this)[0],
         y: d3.mouse(this)[1]
-      }
+      };
       pos.minX = pos.x - 2;
       pos.maxX = pos.x + 2;
       pos.minY = pos.y - 2;
       pos.maxY = pos.y + 2;
 
+      // hit detection
       var matches = data.filter(function(d) {
         if (d.x >= pos.minX && d.x <= pos.maxX && 
             d.y >= pos.minY && d.y <= pos.maxY) {
           return d;
         }
-      })
+      });
 
       var out = "Points under mouse: " + matches.length + "\n";
       matches.forEach(function(d) {
         out += "Id: " + d.id + ", x: " + d.x + ", y: " + d.y + ", color: " + d.color + "\n";
-      })
+      });
 
       // output mouse hit details
       d3.select("pre").text(out);
 
+      // cap point bar to current domain + 5% (which will slightly overflow pointBar scale)
+      var hits = matches.length;
+      var max = samplesOptions[samplesIdx].pointScaleDomain[1];
+      if (hits > max) {
+        hits = max * 1.05;
+      };
+
       // update svg
       pointBarGroup.selectAll("rect")
-          .data([matches.length])
-          .attr("width", function(d) { return pointScale(d) })
-
+          .data([hits])
+          .attr("width", function(d) { return pointScale(d) });
     });
 
 // get drawing context of canvas
 var ctx = canvas.node().getContext("2d");
 
-// add identifier
+
+// add svg elements
+
+// add svg identifier
 svg.append("text")
     .attr({ "x": svgDim.width - 180, "y": 20 })
     .text("SVG with embedded Canvas");
 
+// create group to hold viz elements
 var group = svg.append("g")
-    .attr("transform", "translate(370, 50)")
+    .attr("transform", "translate(370, 50)");
 
 
-
-
-
-// data extent viz
+// add data extent bars
 
 group.append("text")
     .attr({ x: 0, y: posY })
-    .text("Extent");
+    .text("Data extent");
 
 posY += 15;
 
-var scale = d3.scale.linear()
+var extentScale = d3.scale.linear()
     .domain([-5, 5])
     .range([0, groupWidth])
 
-var axis = d3.svg.axis()
-    .scale(scale)
+var extentAxis = d3.svg.axis()
+    .scale(extentScale)
     .orient("bottom")
     .outerTickSize([-(barHeight + barPadding) * 2])
 
 var initialData = [
   { name: "x", min: -1, max: 3 },
   { name: "y", min: -4, max: 4 }
-]
+];
 
-var barGroup = group.append("g")
+var extentBarGroup = group.append("g")
   .attr("transform", "translate(0," + posY + ")");
 
-var barUpdateSel = barGroup.selectAll("rect")
+var extentBarUpdateSel = extentBarGroup.selectAll("rect")
     .data(initialData);
 
-barUpdateSel
+extentBarUpdateSel
   .enter().append("rect")
-    .attr("x", function(d) { return scale(d.min) })
+    .attr("class", "dataBar")
+    .attr("x", function(d) { return extentScale(d.min) })
     .attr("y", function(d, i) { return i * (barHeight + 3) })
-    .attr("width", function(d) { return scale(d.max) - scale(d.min) })
-    .attr("height", barHeight)
-    .style("fill", "lightgray")
+    .attr("width", function(d) { return extentScale(d.max) - extentScale(d.min) })
+    .attr("height", barHeight);
 
-barUpdateSel
+extentBarUpdateSel
   .enter().append("text")
     .attr("x", -13)
     .attr("y", function(d, i) { return i * (barHeight +3) + 12 })
-    .text(function(d) { return d.name })
+    .text(function(d) { return d.name });
 
-barGroup.append("g")
+extentBarGroup.append("g")
     .attr("class", "axis")
     .attr("transform", "translate(0," + 2 * (barHeight + barPadding) + ")")
-    .call(axis);
+    .call(extentAxis);
 
 posY += 2 * (barHeight + barPadding) + 50;
 
 
-// correlation viz
+// add computed correlation bar
 
 group.append("text")
     .attr({ x: 0, y: posY })
-    .text("Computed correlation coefficient");
+    .text("Computed correlation");
+
+posY += 15;
 
 var correlScale = d3.scale.linear()
     .domain([0, 1])
-    .range([0, groupWidth])
+    .range([0, groupWidth]);
 
 var correlAxis = d3.svg.axis()
     .scale(correlScale)
@@ -291,82 +309,88 @@ var correlBarGroup = group.append("g")
 var correlBar = correlBarGroup.selectAll("rect")
     .data([1])
   .enter().append("rect")
+    .attr("class", "dataBar")
     .attr("x", 0)
-    .attr("y", barHeight + 3)
+    .attr("y", 0)
     .attr("width", function(d) { return correlScale(d) })
-    .attr("height", barHeight)
-    .style("fill", "lightgray")
+    .attr("height", barHeight);
 
 correlBarGroup.append("g")
     .attr("class", "axis")
-    .attr("transform", "translate(0," + 2 * (barHeight + barPadding) + ")")
+    .attr("transform", "translate(0," + (barHeight + barPadding) + ")")
     .call(correlAxis);
 
-posY += 2 * (barHeight + barPadding) + 50;
+posY += (barHeight + barPadding) + 50;
 
 
-// mouse hits
+// add mouse hit bar
 
 group.append("text")
     .attr({ x: 0, y: posY })
     .text("Current points under mouse");
 
-pointScale = d3.scale.linear()
-    .domain([0, 500])
-    .range([0, groupWidth])
+posY += 15;
 
-var pointAxis = d3.svg.axis()
+pointScale = d3.scale.linear()
+    .domain(samplesOptions[samplesIdx].pointScaleDomain)
+    .range([0, groupWidth]);
+
+pointAxis = d3.svg.axis()
     .scale(pointScale)
     .orient("bottom")
     .outerTickSize([-(barHeight + 3)])
-    .ticks([5])
+    .ticks([5]);
 
 pointBarGroup = group.append("g")
     .attr("transform", "translate(0," + posY + ")");
 
 var pointBar = pointBarGroup.selectAll("rect")
-    .data([400])
+    .data([0])
   .enter().append("rect")
+    .attr("class", "dataBar")
     .attr("x", 0)
-    .attr("y", barHeight + 3)
+    .attr("y", 0)
     .attr("width", function(d) { return pointScale(d) })
-    .attr("height", barHeight)
-    .style("fill", "lightgray")
+    .attr("height", barHeight);
 
-pointBarGroup.append("g")
+pointAxisGroup = pointBarGroup.append("g")
     .attr("class", "axis")
-    .attr("transform", "translate(0," + 2 * (barHeight + barPadding) + ")")
+    .attr("transform", "translate(0," + (barHeight + barPadding) + ")")
     .call(pointAxis);
 
+function updatePointScale() {
+  pointScale.domain(samplesOptions[samplesIdx].pointScaleDomain);
+  pointAxisGroup.call(pointAxis);
+}
 
-// ui controls
 
-// update button
-var rightPanel = container.append("div")
+// add ui controls
+
+// add update button
+var controlPanel = container.append("div")
     .style("display", "inline-block")
-    .attr("class", "control")
+    .attr("class", "control");
 
-rightPanel.append("button")
+controlPanel.append("button")
     .attr("class", "btn btn-primary btn-small")
-    .text("Generate New Points")
+    .text("Generate New Data")
     .on("click", function() {
       this.blur();
       generateData();
-      updateCanvas();
-    })
+      updateViz();
+    });
 
 
-// samples selection
-
-var newSamplesLabel = rightPanel.append("label")
+// add samples radio buttons
+var newSamplesLabel = controlPanel.append("label")
     .text("Number of samples");
 
-rightPanel.append("div")
+controlPanel.append("div")
     .style("margin-top", "-20px")
     .selectAll(".sampleOption")
     .data(samplesOptions)
   .enter().append("span")
-    .style("margin-right", "18px")
+    .style("margin-right", "25px")
   .append("label")
     .attr("class", "sampleOption")
     .style("display", "inline-block")
@@ -378,62 +402,75 @@ rightPanel.append("div")
       return d.samples === samplesCurrent ? true : false;
     })
   .on("change", function() {
-    var idx = +d3.select('input[name="samples"]:checked').node().value;
-    console.log("value", idx, samplesOptions[idx])
-    samplesCurrent = samplesOptions[idx].samples;
-    generateData()
-    updateCanvas();
-  })
+    // get index to samplesOptions
+    samplesIdx = +d3.select('input[name="samples"]:checked').node().value;
+    
+    // update samples count
+    samplesCurrent = samplesOptions[samplesIdx].samples;
+
+    // update opacity variable and opacity range control
+    opacityCurrent = samplesOptions[samplesIdx].opacity;
+    opacityRangeControl.property("value", Math.round(opacityCurrent * 100));
+    opacityLabel.text("Opacity (currently " + Math.round((opacityCurrent * 100)) + "% )");
+
+    // update viz
+    updatePointScale();
+    generateData();
+    updateViz();
+  });
 
 
-var opacityLabel = rightPanel.append("label")
+// add opacity range control
+opacityLabel = controlPanel.append("label")
     .text("Opacity (currently " + (opacityCurrent * 100) + "% )");
 
-rightPanel.append("input")
+opacityRangeControl = controlPanel.append("input")
     .attr({ "type": "range", "min": 0, "max": 100, "step": 1 })
-    .attr("value", Math.round(opacityDefault * 100))
+    .attr("value", Math.round(opacityCurrent * 100))
     .on("input", function() {
       var value = d3.select(this).property("value");
       opacityCurrent = value / 100;
       opacityLabel.text("Opacity (currently " + Math.round((opacityCurrent * 100)) + "% )");
-      updateCanvas();
-    })
+      updateViz();
+    });
 
-var correlationDefault = 0.7;
-var correlationCurrent = correlationDefault;
 
-var correlationLabel = rightPanel.append("label")
+// add correlation range control
+var correlationLabel = controlPanel.append("label")
     .text("Target correlation (currently " + correlationCurrent + ")");
 
-rightPanel.append("input")
+controlPanel.append("input")
     .attr({ "type": "range", "min": 0, "max": 100, "step": 1 })
     .attr("value", Math.round(correlationDefault * 100))
     .on("input", function() {
       var value = d3.select(this).property("value");
       correlationCurrent = value / 100;
       correlationLabel.text("Target correlation (currently " + correlationCurrent + ")");
-      generateData()
-      updateCanvas();
-    })
+      generateData();
+      updateViz();
+    });
 
-rightPanel.append("label")
+
+// add color checkbox
+controlPanel.append("label")
     .text("Use color")
     .attr("for", "checkbox")
   .append("input")
-    .attr("name", "checkbox")
     .attr("type", "checkbox")
+    .attr("name", "checkbox")
     .property("checked", false)
     .on("change", function() {
-      canvasColor = d3.select(this).property("checked")
+      canvasColor = d3.select(this).property("checked");
       generateData();
-      updateCanvas();
-    })
+      updateViz();
+    });
 
 
-// add container for mouseover info
-info = container.append("pre")
+// add container for mouseover hit detection list
+container.append("pre");
 
 
+// data generator
 function generateData() {
 
   // clear data array
@@ -441,15 +478,17 @@ function generateData() {
 
   xScale = d3.scale.linear()
       .domain([-4, 4])
-      .rangeRound([0, canvasDim.width])
+      .rangeRound([0, canvasDim.width]);
 
   yScale = d3.scale.linear()
       .domain([-4, 4])
-      .rangeRound([canvasDim.height, 0])
+      .rangeRound([canvasDim.height, 0]);
 
   var color = d3.scale.category20b();
+  var colorValue = canvasColor ? color(d) : "black";
 
-  // http://www.sitmo.com/article/generating-correlated-random-numbers/
+  // generate correlated data points
+  // source: http://www.sitmo.com/article/generating-correlated-random-numbers/
   d3.range(samplesCurrent).forEach(function(d) {
 
     var x1 = normDist();
@@ -460,37 +499,32 @@ function generateData() {
     var xValue = x1;
     var yValue = y1;
 
-    var colorValue = canvasColor ? color(d) : "black"
-
     var point = {
       x: xScale(xValue),
       y: yScale(yValue),
       id: d,
       color: colorValue
-    }
-    data.push(point)
+    };
+
+    data.push(point);
   })
 
   var xArr = data.map(function(d) { return d.x });
   var yArr = data.map(function(d) { return d.y });
-  pearsonCorrelation = getPearsonCorrelation(xArr, yArr);
 
+  pearsonCorrelation = getPearsonCorrelation(xArr, yArr);
 }
 
 
-function updateCanvas() {
+function updateViz() {
 
-  // clear the canvas
-  ctx.clearRect(0, 0, canvasDim.width, canvasDim.height)
+  // update canvas
 
-  // set background color and draw with full opacity
-  ctx.globalAlpha = 1;
-  //ctx.rect(0, 0, canvasDim.width, canvasDim.height);
-  //ctx.fillStyle = "lightyellow";
-  //ctx.fill();
-  //ctx.stroke();
+  // clear canvas
+  ctx.clearRect(0, 0, canvasDim.width, canvasDim.height);
 
   // draw identifier
+  ctx.globalAlpha = 1;
   ctx.fillStyle = "black";
   ctx.font = "12px Arial";
   ctx.fillText("Canvas with " + format(samplesCurrent) + " elements", 
@@ -514,32 +548,30 @@ function updateCanvas() {
   var xExtent = d3.extent(data, function(d) { return xScale.invert(d.x); });
   var yExtent = d3.extent(data, function(d) { return yScale.invert(d.y); });
 
-  // compute mean 
-  //var xMean = d3.mean(data, function(d) { return xScale.invert(d.x) });
-  //var yMean = d3.mean(data, function(d) { return yScale.invert(d.y) });
-
   var extents = [
     { name: "xDim", min: xExtent[0], max: xExtent[1] },
     { name: "yDim", min: yExtent[0], max: yExtent[1] }
   ];
 
+  // compute mean 
+  //var xMean = d3.mean(data, function(d) { return xScale.invert(d.x) });
+  //var yMean = d3.mean(data, function(d) { return yScale.invert(d.y) });
+
   // update extent bars
-  barGroup.selectAll("rect")
+  extentBarGroup.selectAll("rect")
       .data(extents)
-      .attr("x", function(d) { return scale(d.min) })
-      .attr("width", function(d) { return scale(d.max) - scale(d.min) })
+      .attr("x", function(d) { return extentScale(d.min) })
+      .attr("width", function(d) { return extentScale(d.max) - extentScale(d.min) });
 
   // update correlation bar
   correlBar = correlBarGroup.selectAll("rect")
       .data([Math.abs(-pearsonCorrelation)])
-      .attr("width", function(d) { return correlScale(d) })
-      .style("fill", "lightgray")
-
+      .attr("width", function(d) { return correlScale(d) });
 }
 
 // initial update
 generateData();
-updateCanvas();
+updateViz();
 
 
 // generate normal distribution
@@ -560,12 +592,13 @@ function normDist() {
 }
 
 
+// compute correlation coefficient
 // Source: http://stevegardner.net/2012/06/11/javascript-code-to-calculate-the-pearson-correlation-coefficient/
 // Source: http://memory.psych.mun.ca/tech/js/correlation.shtml
 function getPearsonCorrelation(x, y) {
   var shortestArrayLength = 0;
    
-  if(x.length == y.length) {
+  if (x.length == y.length) {
       shortestArrayLength = x.length;
   } else if(x.length > y.length) {
       shortestArrayLength = y.length;
@@ -579,11 +612,11 @@ function getPearsonCorrelation(x, y) {
   var x2 = [];
   var y2 = [];
 
-  for(var i=0; i<shortestArrayLength; i++) {
+  for (var i = 0; i < shortestArrayLength; i++) {
       xy.push(x[i] * y[i]);
       x2.push(x[i] * x[i]);
       y2.push(y[i] * y[i]);
-  }
+  };
 
   var sum_x = 0;
   var sum_y = 0;
@@ -591,13 +624,13 @@ function getPearsonCorrelation(x, y) {
   var sum_x2 = 0;
   var sum_y2 = 0;
 
-  for(var i=0; i< shortestArrayLength; i++) {
+  for (var i = 0; i < shortestArrayLength; i++) {
       sum_x += x[i];
       sum_y += y[i];
       sum_xy += xy[i];
       sum_x2 += x2[i];
       sum_y2 += y2[i];
-  }
+  };
 
   var step1 = (shortestArrayLength * sum_xy) - (sum_x * sum_y);
   var step2 = (shortestArrayLength * sum_x2) - (sum_x * sum_x);
