@@ -31,7 +31,7 @@ svg .bg {
 }
 button.btn {
   width: 250px;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
 }
 pre {
   background-color: white;
@@ -51,12 +51,34 @@ pre {
 }
 label {
   font-size: 12px;
-  /*font-weight: bold;*/
   margin-top: 15px;
 }
 input[type=range] {
   display: block;
   width: 250px;
+}
+input[type=checkbox],
+input[type=radio] {
+  vertical-align: top;
+  margin-left: 5px;
+}
+text {
+  font-size: 12px;
+  font-family: "Arial" 
+}
+
+.axis text {
+  font-family: "Arial";
+  /*font-size: 12px;*/
+}
+.axis path,
+.axis line {
+  fill: none;
+  stroke: gray;
+  shape-rendering: crispEdges;
+}
+.sampleOption label {
+  display: inline-block;
 }
 </style>
 <body>
@@ -72,7 +94,7 @@ input[type=range] {
 <script>
 'use strict';
 
-console.log(d3.version);
+
 
 var container = d3.select("#container");
 var svgDim = { width: 600, height: 350 };
@@ -82,19 +104,35 @@ var data = [];
 var info;
 
 var samplesOptions = [
-  { value: 0, samples:    50 },
-  { value: 1, samples:   500 },
-  { value: 2, samples:  5000 },
-  { value: 3, samples: 50000 }
+  { value: 0, samples:     5, display:   "5" },
+  { value: 1, samples:    50, display:  "50" },
+  { value: 2, samples:   500, display: "500" },
+  { value: 3, samples:  5000, display:  "5K" },
+  { value: 4, samples: 50000, display: "50K" }
 ];
 var samplesDefault = 500;
 var samplesCurrent = samplesDefault;
 
-
 var opacityDefault = 0.7;
 var opacityCurrent = opacityDefault;
+var canvasColor = false;
+var xScale;
+var yScale;
+var pearsonCorrelation;
+var pointBarGroup;
+var pointScale;
+var groupWidth = 200;
+var barHeight = 18;
+var barPadding = 3;
+var posY = 0;
+var format = d3.format(",d")
 
-console.log("--", canvasDim)
+
+
+
+
+
+
 
 // create svg and group
 var svg = container.append("svg")
@@ -111,6 +149,7 @@ svg.append("rect")
     .attr("class", "bg")
 
 // add foreign object to svg
+// https://gist.github.com/mbostock/1424037
 var foreignObject = svg.append("foreignObject")
     .attr("x", margin.x)
     .attr("y", margin.y)
@@ -154,7 +193,15 @@ var canvas = foBody.append("canvas")
       matches.forEach(function(d) {
         out += "Id: " + d.id + ", x: " + d.x + ", y: " + d.y + ", color: " + d.color + "\n";
       })
+
+      // output mouse hit details
       d3.select("pre").text(out);
+
+      // update svg
+      pointBarGroup.selectAll("rect")
+          .data([matches.length])
+          .attr("width", function(d) { return pointScale(d) })
+
     });
 
 // get drawing context of canvas
@@ -162,8 +209,139 @@ var ctx = canvas.node().getContext("2d");
 
 // add identifier
 svg.append("text")
-    .attr({ "x": svgDim.width - 180, "y": 20, "font-family": "Arial", "font-size": "12px" })
-    .text("SVG with embedded Canvas")
+    .attr({ "x": svgDim.width - 180, "y": 20 })
+    .text("SVG with embedded Canvas");
+
+var group = svg.append("g")
+    .attr("transform", "translate(370, 50)")
+
+
+
+
+
+// data extent viz
+
+group.append("text")
+    .attr({ x: 0, y: posY })
+    .text("Extent");
+
+posY += 15;
+
+var scale = d3.scale.linear()
+    .domain([-5, 5])
+    .range([0, groupWidth])
+
+var axis = d3.svg.axis()
+    .scale(scale)
+    .orient("bottom")
+    .outerTickSize([-(barHeight + barPadding) * 2])
+
+var initialData = [
+  { name: "x", min: -1, max: 3 },
+  { name: "y", min: -4, max: 4 }
+]
+
+var barGroup = group.append("g")
+  .attr("transform", "translate(0," + posY + ")");
+
+var barUpdateSel = barGroup.selectAll("rect")
+    .data(initialData);
+
+barUpdateSel
+  .enter().append("rect")
+    .attr("x", function(d) { return scale(d.min) })
+    .attr("y", function(d, i) { return i * (barHeight + 3) })
+    .attr("width", function(d) { return scale(d.max) - scale(d.min) })
+    .attr("height", barHeight)
+    .style("fill", "lightgray")
+
+barUpdateSel
+  .enter().append("text")
+    .attr("x", -13)
+    .attr("y", function(d, i) { return i * (barHeight +3) + 12 })
+    .text(function(d) { return d.name })
+
+barGroup.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(0," + 2 * (barHeight + barPadding) + ")")
+    .call(axis);
+
+posY += 2 * (barHeight + barPadding) + 50;
+
+
+// correlation viz
+
+group.append("text")
+    .attr({ x: 0, y: posY })
+    .text("Computed correlation coefficient");
+
+var correlScale = d3.scale.linear()
+    .domain([0, 1])
+    .range([0, groupWidth])
+
+var correlAxis = d3.svg.axis()
+    .scale(correlScale)
+    .orient("bottom")
+    .outerTickSize([-(barHeight + 3)])
+    .tickValues([0, 0.2, 0.4, 0.6, 0.8, 1]);
+
+var correlBarGroup = group.append("g")
+    .attr("transform", "translate(0," + posY + ")");
+
+var correlBar = correlBarGroup.selectAll("rect")
+    .data([1])
+  .enter().append("rect")
+    .attr("x", 0)
+    .attr("y", barHeight + 3)
+    .attr("width", function(d) { return correlScale(d) })
+    .attr("height", barHeight)
+    .style("fill", "lightgray")
+
+correlBarGroup.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(0," + 2 * (barHeight + barPadding) + ")")
+    .call(correlAxis);
+
+posY += 2 * (barHeight + barPadding) + 50;
+
+
+// mouse hits
+
+group.append("text")
+    .attr({ x: 0, y: posY })
+    .text("Current points under mouse");
+
+pointScale = d3.scale.linear()
+    .domain([0, 500])
+    .range([0, groupWidth])
+
+var pointAxis = d3.svg.axis()
+    .scale(pointScale)
+    .orient("bottom")
+    .outerTickSize([-(barHeight + 3)])
+    .ticks([5])
+
+pointBarGroup = group.append("g")
+    .attr("transform", "translate(0," + posY + ")");
+
+var pointBar = pointBarGroup.selectAll("rect")
+    .data([400])
+  .enter().append("rect")
+    .attr("x", 0)
+    .attr("y", barHeight + 3)
+    .attr("width", function(d) { return pointScale(d) })
+    .attr("height", barHeight)
+    .style("fill", "lightgray")
+
+pointBarGroup.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(0," + 2 * (barHeight + barPadding) + ")")
+    .call(pointAxis);
+
+
+
+
+
 
 
 // ui controls
@@ -178,13 +356,60 @@ rightPanel.append("button")
     .text("Generate New Points")
     .on("click", function() {
       this.blur();
-      updateData(generateData());
+      updateCanvas(generateData());
     })
+
+
+
+
+
+
+
+
+
+var newSamplesLabel = rightPanel.append("label")
+    .text("Number of samples");
+
+rightPanel.append("div")
+    .style("margin-top", "-20px")
+    .selectAll(".sampleOption")
+    .data(samplesOptions)
+  .enter().append("span")
+    .style("margin-right", "18px")
+  .append("label")
+    .attr("class", "sampleOption")
+    .style("display", "inline-block")
+    .text(function(d) { return d.display })
+  .append("input")
+    .attr({ type: "radio", class: "radio", name: "samples" })
+    .attr("value", function(d, i) { return d.value })
+    .property("checked", function(d, i) {
+      var bla = samplesOptions.find(function(d) {
+        //console.log(i, d, samplesCurrent, d.samples == samplesCurrent)
+        if (d.samples == samplesCurrent) { return true }
+        else { return false; }
+      });
+      console.log("--", i == 2, bla.samples, d.samples, samplesCurrent)
+      if (i == 2) return true;    
+    })
+  .on("change", function() {
+    var idx = +d3.select('input[name="samples"]:checked').node().value;
+    console.log("value", idx, samplesOptions[idx])
+    samplesCurrent = samplesOptions[idx].samples;
+    generateData()
+    updateCanvas();
+  })
+
+
+
+
+
+
 
 var samplesLabel = rightPanel.append("label")
     .text("Number of samples (currently " + samplesCurrent + ")");
 
-var samplesRange = rightPanel.append("input")
+rightPanel.append("input")
     .attr({ "type": "range", "min": 0, "max": 3, "step": 1 })
     .attr("value", function() {
       return samplesOptions.find(function(d) {
@@ -200,21 +425,25 @@ var samplesRange = rightPanel.append("input")
     })
     .on("change", function() {
       samplesLabel.text("Number of samples (currently " + samplesCurrent + ")");
-      updateData(generateData());
+      generateData()
+      updateCanvas();
     })
+
+
+
 
 
 var opacityLabel = rightPanel.append("label")
     .text("Opacity (currently " + (opacityCurrent * 100) + "% )");
 
-var opacityRange = rightPanel.append("input")
+rightPanel.append("input")
     .attr({ "type": "range", "min": 0, "max": 100, "step": 1 })
     .attr("value", Math.round(opacityDefault * 100))
     .on("input", function() {
       var value = d3.select(this).property("value");
       opacityCurrent = value / 100;
       opacityLabel.text("Opacity (currently " + Math.round((opacityCurrent * 100)) + "% )");
-      updateData();
+      updateCanvas();
     })
 
 var correlationDefault = 0.7;
@@ -223,37 +452,52 @@ var correlationCurrent = correlationDefault;
 var correlationLabel = rightPanel.append("label")
     .text("Target correlation (currently " + correlationCurrent + ")");
 
-var correlationRange = rightPanel.append("input")
+rightPanel.append("input")
     .attr({ "type": "range", "min": 0, "max": 100, "step": 1 })
     .attr("value", Math.round(correlationDefault * 100))
     .on("input", function() {
       var value = d3.select(this).property("value");
       correlationCurrent = value / 100;
       correlationLabel.text("Target correlation (currently " + correlationCurrent + ")");
-      updateData(generateData());
+      generateData()
+      updateCanvas();
     })
+
+rightPanel.append("label")
+    .text("Use color")
+    .attr("for", "checkbox")
+  .append("input")
+    .attr("name", "checkbox")
+    .attr("type", "checkbox")
+    .property("checked", false)
+    .on("change", function() {
+      canvasColor = d3.select(this).property("checked")
+      generateData();
+      updateCanvas();
+    })
+
 
 // add container for mouseover info
 info = container.append("pre")
 
 
-
 function generateData() {
 
-  var count = samplesCurrent;
+  // clear data array
   data = [];
 
-  var xScale = d3.scale.linear()
-      .domain([-5, 5])
+  xScale = d3.scale.linear()
+      .domain([-4, 4])
       .rangeRound([0, canvasDim.width])
 
-  var yScale = d3.scale.linear()
-      .domain([-5, 5])
+  yScale = d3.scale.linear()
+      .domain([-4, 4])
       .rangeRound([canvasDim.height, 0])
 
   var color = d3.scale.category20b();
 
-  d3.range(count).forEach(function(d) {
+  // http://www.sitmo.com/article/generating-correlated-random-numbers/
+  d3.range(samplesCurrent).forEach(function(d) {
 
     var x1 = normDist();
     var x2 = normDist();
@@ -263,34 +507,40 @@ function generateData() {
     var xValue = x1;
     var yValue = y1;
 
+    var colorValue = canvasColor ? color(d) : "black"
+
     var point = {
       x: xScale(xValue),
       y: yScale(yValue),
       id: d,
-      color: "black" //color(d % 20)
+      color: colorValue
     }
     data.push(point)
   })
+
+  var xArr = data.map(function(d) { return d.x });
+  var yArr = data.map(function(d) { return d.y });
+  pearsonCorrelation = getPearsonCorrelation(xArr, yArr);
+
 }
 
 
-
-
-function updateData() {
+function updateCanvas() {
 
   // clear the canvas
   ctx.clearRect(0, 0, canvasDim.width, canvasDim.height)
 
   // set background color and draw with full opacity
-  ctx.globalAlpha = .8;
+  ctx.globalAlpha = 1;
   //ctx.rect(0, 0, canvasDim.width, canvasDim.height);
   //ctx.fillStyle = "lightyellow";
   //ctx.fill();
   //ctx.stroke();
 
   // draw identifier
-  ctx.font = "12px Arial"
-  ctx.fillText("Canvas with " + samplesCurrent + " elements", 
+  ctx.fillStyle = "black";
+  ctx.font = "12px Arial";
+  ctx.fillText("Canvas with " + format(samplesCurrent) + " elements", 
     canvasDim.width - 170, canvasDim.height - 20);
 
   // set opacity for data elements
@@ -304,11 +554,39 @@ function updateData() {
     ctx.closePath();
     ctx.fill();
   })
+
+  // update svg
+
+  // compute extents
+  var xExtent = d3.extent(data, function(d) { return xScale.invert(d.x); });
+  var yExtent = d3.extent(data, function(d) { return yScale.invert(d.y); });
+
+  // compute mean 
+  //var xMean = d3.mean(data, function(d) { return xScale.invert(d.x) });
+  //var yMean = d3.mean(data, function(d) { return yScale.invert(d.y) });
+
+  var extents = [
+    { name: "xDim", min: xExtent[0], max: xExtent[1] },
+    { name: "yDim", min: yExtent[0], max: yExtent[1] }
+  ];
+
+  // update extent bars
+  barGroup.selectAll("rect")
+      .data(extents)
+      .attr("x", function(d) { return scale(d.min) })
+      .attr("width", function(d) { return scale(d.max) - scale(d.min) })
+
+  // update correlation bar
+  correlBar = correlBarGroup.selectAll("rect")
+      .data([Math.abs(-pearsonCorrelation)])
+      .attr("width", function(d) { return correlScale(d) })
+      .style("fill", "lightgray")
+
 }
 
-
 // initial update
-updateData(generateData());
+generateData();
+updateCanvas();
 
 
 // generate normal distribution
@@ -329,18 +607,52 @@ function normDist() {
 }
 
 
-// Standard Normal variate using Box-Muller transform.
-// http://stackoverflow.com/questions/25582882/javascript-math-random-normal-distribution-gaussian-bell-curve
-function randn_bm() {
-    var u = 1 - Math.random(); // Subtraction to flip [0, 1) to (0, 1].
-    var v = 1 - Math.random();
-    return Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+// Source: http://stevegardner.net/2012/06/11/javascript-code-to-calculate-the-pearson-correlation-coefficient/
+// Source: http://memory.psych.mun.ca/tech/js/correlation.shtml
+function getPearsonCorrelation(x, y) {
+  var shortestArrayLength = 0;
+   
+  if(x.length == y.length) {
+      shortestArrayLength = x.length;
+  } else if(x.length > y.length) {
+      shortestArrayLength = y.length;
+      console.error('x has more items in it, the last ' + (x.length - shortestArrayLength) + ' item(s) will be ignored');
+  } else {
+      shortestArrayLength = x.length;
+      console.error('y has more items in it, the last ' + (y.length - shortestArrayLength) + ' item(s) will be ignored');
+  }
+
+  var xy = [];
+  var x2 = [];
+  var y2 = [];
+
+  for(var i=0; i<shortestArrayLength; i++) {
+      xy.push(x[i] * y[i]);
+      x2.push(x[i] * x[i]);
+      y2.push(y[i] * y[i]);
+  }
+
+  var sum_x = 0;
+  var sum_y = 0;
+  var sum_xy = 0;
+  var sum_x2 = 0;
+  var sum_y2 = 0;
+
+  for(var i=0; i< shortestArrayLength; i++) {
+      sum_x += x[i];
+      sum_y += y[i];
+      sum_xy += xy[i];
+      sum_x2 += x2[i];
+      sum_y2 += y2[i];
+  }
+
+  var step1 = (shortestArrayLength * sum_xy) - (sum_x * sum_y);
+  var step2 = (shortestArrayLength * sum_x2) - (sum_x * sum_x);
+  var step3 = (shortestArrayLength * sum_y2) - (sum_y * sum_y);
+  var step4 = Math.sqrt(step2 * step3);
+  var answer = step1 / step4;
+
+  return answer;
 }
-
-
-d3.range(100).forEach(function(d) {
-  //console.log(normDist().toFixed(3) + "\t" + randn_bm().toFixed(3))
-})
-
 
 </script>
