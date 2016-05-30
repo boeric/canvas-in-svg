@@ -339,14 +339,9 @@ pointBarGroup.append("g")
     .call(pointAxis);
 
 
-
-
-
-
-
 // ui controls
 
-// add update button
+// update button
 var rightPanel = container.append("div")
     .style("display", "inline-block")
     .attr("class", "control")
@@ -356,16 +351,12 @@ rightPanel.append("button")
     .text("Generate New Points")
     .on("click", function() {
       this.blur();
-      updateCanvas(generateData());
+      generateData();
+      updateCanvas();
     })
 
 
-
-
-
-
-
-
+// samples selection
 
 var newSamplesLabel = rightPanel.append("label")
     .text("Number of samples");
@@ -383,14 +374,8 @@ rightPanel.append("div")
   .append("input")
     .attr({ type: "radio", class: "radio", name: "samples" })
     .attr("value", function(d, i) { return d.value })
-    .property("checked", function(d, i) {
-      var bla = samplesOptions.find(function(d) {
-        //console.log(i, d, samplesCurrent, d.samples == samplesCurrent)
-        if (d.samples == samplesCurrent) { return true }
-        else { return false; }
-      });
-      console.log("--", i == 2, bla.samples, d.samples, samplesCurrent)
-      if (i == 2) return true;    
+    .property("checked", function(d) {
+      return d.samples === samplesCurrent ? true : false;
     })
   .on("change", function() {
     var idx = +d3.select('input[name="samples"]:checked').node().value;
@@ -399,38 +384,6 @@ rightPanel.append("div")
     generateData()
     updateCanvas();
   })
-
-
-
-
-
-
-
-var samplesLabel = rightPanel.append("label")
-    .text("Number of samples (currently " + samplesCurrent + ")");
-
-rightPanel.append("input")
-    .attr({ "type": "range", "min": 0, "max": 3, "step": 1 })
-    .attr("value", function() {
-      return samplesOptions.find(function(d) {
-        if (d.samples == samplesCurrent) return true;
-      }).value;
-    })
-    .on("input", function() {
-      var value = d3.select(this).property("value");
-      samplesCurrent = samplesOptions.find(function(d) {
-        if (d.value == value) return true;
-      }).samples;
-      samplesLabel.text("Number of samples (will be " + samplesCurrent + ")");
-    })
-    .on("change", function() {
-      samplesLabel.text("Number of samples (currently " + samplesCurrent + ")");
-      generateData()
-      updateCanvas();
-    })
-
-
-
 
 
 var opacityLabel = rightPanel.append("label")
