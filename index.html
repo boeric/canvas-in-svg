@@ -139,6 +139,8 @@ var opacityLabel;
 var canvasColor = false;
 var format = d3.format(",d");
 var posY = 0;
+var d3randomNormal = d3.random.normal(0, 1);
+var useD3randomNormal = false;
 var data = [];
 
 
@@ -578,6 +580,9 @@ updateViz();
 // generate normal distribution
 // http://www.design.caltech.edu/erik/Misc/Gaussian.html
 function normDist() {
+
+  if (useD3randomNormal) { return d3randomNormal() };
+
   var x1, x2, w, y1, y2;
 
   do {
