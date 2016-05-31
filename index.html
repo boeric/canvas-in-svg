@@ -485,7 +485,6 @@ function generateData() {
       .rangeRound([canvasDim.height, 0]);
 
   var color = d3.scale.category20b();
-  var colorValue = canvasColor ? color(d) : "black";
 
   // generate correlated data points
   // source: http://www.sitmo.com/article/generating-correlated-random-numbers/
@@ -498,6 +497,8 @@ function generateData() {
 
     var xValue = x1;
     var yValue = y1;
+
+    var colorValue = canvasColor ? color(d) : "black";
 
     var point = {
       x: xScale(xValue),
