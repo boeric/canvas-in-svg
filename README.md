@@ -1,4 +1,4 @@
-#### Embedded Canvas in SVG
+# canvas-in-svg
 
 The visualization demonstrates the use of an embedded Canvas in an SVG element. While this example includes only a single SVG element, an embedded canvas may make sense when a number of SVG elements needs to be generated, with each requiring to render large datasets that would othwewise overwhelm the DOM. 
 
